@@ -8,10 +8,10 @@ import streamlit as st
 # Configuration
 # -----------------------------
 st.set_page_config(
-    page_title="CleanFoam Pro",
+    page_title="CleanFoam",
     layout="wide",
 )
-st.title("CleanFoam Pro")
+st.title("CleanFoam")
 
 # -----------------------------
 # Session State Management
@@ -75,46 +75,42 @@ def main():
     # --- 1. Date Input ---
     st.session_state.report_date = st.date_input("Date", value=st.session_state.report_date)
 
-    # --- 2. Main Input Fields ---
-    with st.form(key="add_worker_form", clear_on_submit=True):
-        # Reordered as requested
-        name = st.text_input("Worker Name")
-        total_value = st.number_input("Total Value", min_value=0.0, step=0.5, format="%.2f")
-        withdrawn_val = st.number_input("Withdrawn Value", min_value=0.0, step=0.5, format="%.2f")
-        
-        entry_type = st.radio("Entry Type", ("Standard", "CF"), horizontal=True)
-        
-        st.divider()
+    # --- 2. Main Input Fields (Removed st.form to fix button conflicts) ---
+    name = st.text_input("Worker Name", key="name_input")
+    total_value = st.number_input("Total Value", min_value=0.0, step=0.5, format="%.2f", key="total_input")
+    withdrawn_val = st.number_input("Withdrawn Value", min_value=0.0, step=0.5, format="%.2f", key="withdrawn_input")
+    entry_type = st.radio("Entry Type", ("Standard", "CF"), horizontal=True, key="entry_type_input")
+    
+    st.divider()
 
-        # --- 3. Advanced Options ---
-        with st.expander("Advanced Options"):
-            col1, col2 = st.columns(2)
-            with col1:
-                due_custom_val = st.number_input("Custom Due (Optional)", min_value=0.0, step=0.5, format="%.2f")
-            with col2:
-                note_text = st.text_input("Note (Optional)")
-        
-        st.divider()
+    # --- 3. Advanced Options ---
+    with st.expander("Advanced Options"):
+        col1, col2 = st.columns(2)
+        with col1:
+            due_custom_val = st.number_input("Custom Due (Optional)", min_value=0.0, step=0.5, format="%.2f", key="custom_due_input")
+        with col2:
+            note_text = st.text_input("Note (Optional)", key="note_input")
+    
+    st.divider()
 
-        # --- 4. Submit Button ---
-        add_clicked = st.form_submit_button("Add Worker", type="primary", use_container_width=True)
-        if add_clicked:
-            if not name:
-                st.error("Worker name is required.")
-            elif total_value <= 0 and entry_type == "Standard":
-                st.error("Total value must be greater than 0.")
+    # --- 4. Submit Button ---
+    if st.button("Add Worker", type="primary", use_container_width=True):
+        if not name:
+            st.error("Worker name is required.")
+        elif total_value <= 0 and entry_type == "Standard":
+            st.error("Total value must be greater than 0.")
+        else:
+            wid = uuid.uuid4().hex[:8]
+            if entry_type == "CF":
+                new_worker = {"ID": wid, "Worker": name, "Total": total_value, "Due": "", "Withdrawn": "", "Remaining": "", "Note": note_text, "EntryType": "CF"}
             else:
-                wid = uuid.uuid4().hex[:8]
-                if entry_type == "CF":
-                    new_worker = {"ID": wid, "Worker": name, "Total": total_value, "Due": "", "Withdrawn": "", "Remaining": "", "Note": note_text, "EntryType": "CF"}
-                else:
-                    fee = compute_fee(total_value, due_custom_val if due_custom_val > 0 else None)
-                    remaining = (total_value / 2) - withdrawn_val - fee
-                    new_worker = {"ID": wid, "Worker": name, "Total": total_value, "Due": fee, "Withdrawn": withdrawn_val, "Remaining": remaining, "Note": note_text, "EntryType": "Standard"}
-                
-                st.session_state.workers.append(new_worker)
-                st.success(f"Added {name} successfully!")
-                st.rerun()
+                fee = compute_fee(total_value, due_custom_val if due_custom_val > 0 else None)
+                remaining = (total_value / 2) - withdrawn_val - fee
+                new_worker = {"ID": wid, "Worker": name, "Total": total_value, "Due": fee, "Withdrawn": withdrawn_val, "Remaining": remaining, "Note": note_text, "EntryType": "Standard"}
+            
+            st.session_state.workers.append(new_worker)
+            st.success(f"Added {name} successfully!")
+            st.rerun()
 
     st.divider()
 
