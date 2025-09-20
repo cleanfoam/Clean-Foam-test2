@@ -17,13 +17,15 @@ st.title("CleanFoam Pro")
 # Session State Management
 # -----------------------------
 def initialize_session_state():
-    """Initialize session state variables."""
+    """Initialize session state variables if they don't exist."""
     if "workers" not in st.session_state:
         st.session_state.workers: list[dict] = []
     if "report_date" not in st.session_state:
         st.session_state.report_date = date.today()
-    if "action_id" not in st.session_state:
-        st.session_state.action_id = None
+    
+    # State variables for managing the delete action robustly
+    if "worker_id_to_delete" not in st.session_state:
+        st.session_state.worker_id_to_delete = None
     if "show_delete_dialog" not in st.session_state:
         st.session_state.show_delete_dialog = False
 
@@ -49,31 +51,32 @@ def compute_fee(total_value: float, custom_due: float | None) -> float:
     return 30.0
 
 # -----------------------------
-# Dialog Handler (for Delete)
-# -----------------------------
-def handle_delete_dialog():
-    """Shows the delete confirmation dialog."""
-    if st.session_state.get("show_delete_dialog"):
-        worker_to_delete = next((w for w in st.session_state.workers if w['ID'] == st.session_state.action_id), None)
-        if worker_to_delete:
-            with st.dialog("Confirm Deletion"):
-                st.warning(f"Are you sure you want to delete the record for **{worker_to_delete['Worker']}**?")
-                c1, c2 = st.columns(2)
-                if c1.button("Yes, Delete", type="primary"):
-                    st.session_state.workers = [w for w in st.session_state.workers if w['ID'] != st.session_state.action_id]
-                    st.session_state.show_delete_dialog = False
-                    st.rerun()
-                if c2.button("Cancel"):
-                    st.session_state.show_delete_dialog = False
-                    st.rerun()
-        else:
-            st.session_state.show_delete_dialog = False
-
-# -----------------------------
 # Main App Logic and Layout
 # -----------------------------
 def main():
     initialize_session_state()
+
+    # --- DIALOG HANDLER: This runs at the top to show the dialog when needed ---
+    if st.session_state.show_delete_dialog and st.session_state.worker_id_to_delete:
+        worker_to_delete = next((w for w in st.session_state.workers if w['ID'] == st.session_state.worker_id_to_delete), None)
+        
+        if worker_to_delete:
+            with st.dialog("Confirm Deletion"):
+                st.warning(f"Are you sure you want to delete the record for **{worker_to_delete['Worker']}**?")
+                c1, c2 = st.columns(2)
+                
+                if c1.button("Yes, Delete", type="primary"):
+                    st.session_state.workers = [w for w in st.session_state.workers if w['ID'] != st.session_state.worker_id_to_delete]
+                    # Reset state and rerun
+                    st.session_state.worker_id_to_delete = None
+                    st.session_state.show_delete_dialog = False
+                    st.rerun()
+                
+                if c2.button("Cancel"):
+                    # Reset state and rerun
+                    st.session_state.worker_id_to_delete = None
+                    st.session_state.show_delete_dialog = False
+                    st.rerun()
 
     # --- 1. Date Input ---
     st.session_state.report_date = st.date_input("Date", value=st.session_state.report_date)
@@ -98,7 +101,7 @@ def main():
             if not name: st.error("Worker name is required.")
             elif total_value <= 0 and entry_type == "Standard": st.error("Total value must be greater than 0.")
             else:
-                wid = uuid.uuid4().hex[:8]
+                wid = uuid.uuid4().hex
                 if entry_type == "CF":
                     new_worker = {"ID": wid, "Worker": name, "Total": total_value, "Due": "", "Withdrawn": "", "Remaining": "", "Note": note_text, "EntryType": "CF"}
                 else:
@@ -126,14 +129,18 @@ def main():
 
         # --- 4. Actions (Stable & Separate) ---
         with st.expander("Actions"):
-            worker_options = {f"{w['Worker']} (Total: {w['Total']}) - ID: {w['ID'][:4]}": w['ID'] for w in st.session_state.workers}
-            selected_label = st.selectbox("Select a worker to delete", options=worker_options.keys(), index=None, placeholder="Choose a worker...")
+            # The user-facing label does not show the ID
+            worker_options_map = {f"{w['Worker']} (Total: {w['Total']})": w['ID'] for w in st.session_state.workers}
+            selected_label = st.selectbox("Select a worker to delete", options=worker_options_map.keys(), index=None, placeholder="Choose a worker...")
             
-            if st.button("Delete Selected Worker", type="secondary", use_container_width=True, disabled=(not selected_label)):
-                if selected_label:
-                    st.session_state.action_id = worker_options[selected_label]
-                    st.session_state.show_delete_dialog = True
-                    st.rerun()
+            delete_button_clicked = st.button("Delete Selected Worker", type="secondary", use_container_width=True, disabled=(not selected_label))
+
+            if delete_button_clicked and selected_label:
+                # This is the core of the stable solution:
+                # We just set the state and rerun. The dialog logic at the top will handle the rest.
+                st.session_state.worker_id_to_delete = worker_options_map[selected_label]
+                st.session_state.show_delete_dialog = True
+                st.rerun()
 
         # --- 5. Financial Summary ---
         st.subheader("Financial Summary")
@@ -159,9 +166,6 @@ def main():
         if st.session_state.workers:
             df_csv = pd.DataFrame(st.session_state.workers)[["Worker", "Total", "Due", "Withdrawn", "Remaining", "Note"]]
             st.download_button("Download Report as CSV", df_csv.to_csv(index=False).encode("utf-8"), f"cleanfoam_report_{st.session_state.report_date.strftime('%Y%m%d')}.csv", "text/csv", use_container_width=True)
-
-    # --- Handle Dialog Popups ---
-    handle_delete_dialog()
 
 if __name__ == "__main__":
     main()
