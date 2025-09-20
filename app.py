@@ -119,25 +119,23 @@ def main():
         st.info("No workers added yet. Use the form above to add a new entry.")
     else:
         df = pd.DataFrame(st.session_state.workers)
-        df["Delete"] = False # Add a column for the delete action
-        
-        # Configure columns for st.data_editor
-        column_config = {
-            "ID": None, "EntryType": None, # Hide internal columns
-            "Worker": "Worker", "Total": "Total", "Due": "Due", "Withdrawn": "Withdrawn", "Remaining": "Remaining", "Note": "Note",
-            "Delete": st.column_config.CheckboxColumn("Delete", help="Click to delete this row")
-        }
-        
-        edited_df = st.data_editor(df, use_container_width=True, hide_index=True, column_config=column_config, key="data_editor")
+        df_display = df.copy()
+        for col in ["Total", "Due", "Withdrawn", "Remaining"]:
+            df_display[col] = pd.to_numeric(df_display[col], errors='coerce').fillna(0).apply(clean_number)
+        st.dataframe(df_display[["Worker", "Total", "Due", "Withdrawn", "Remaining", "Note"]], use_container_width=True, hide_index=True)
 
-        # Check if any delete checkbox was clicked
-        delete_row = edited_df[edited_df["Delete"]].iloc[0] if not edited_df[edited_df["Delete"]].empty else None
-        if delete_row is not None:
-            st.session_state.action_id = delete_row["ID"]
-            st.session_state.show_delete_dialog = True
-            st.rerun() # Rerun to trigger the dialog
+        # --- 4. Actions (Stable & Separate) ---
+        with st.expander("Actions"):
+            worker_options = {f"{w['Worker']} (Total: {w['Total']}) - ID: {w['ID'][:4]}": w['ID'] for w in st.session_state.workers}
+            selected_label = st.selectbox("Select a worker to delete", options=worker_options.keys(), index=None, placeholder="Choose a worker...")
+            
+            if st.button("Delete Selected Worker", type="secondary", use_container_width=True, disabled=(not selected_label)):
+                if selected_label:
+                    st.session_state.action_id = worker_options[selected_label]
+                    st.session_state.show_delete_dialog = True
+                    st.rerun()
 
-        # --- 4. Financial Summary ---
+        # --- 5. Financial Summary ---
         st.subheader("Financial Summary")
         numeric_cols = ["Total", "Withdrawn", "Remaining"]
         for col in numeric_cols: df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
@@ -151,7 +149,7 @@ def main():
 
     st.divider()
 
-    # --- 5. Settings ---
+    # --- 6. Settings ---
     with st.expander("⚙️ Settings"):
         if st.button("Reset All Workers", use_container_width=True):
             if st.session_state.workers:
