@@ -47,36 +47,10 @@ def compute_fee(total_value: float, custom_due: float | None) -> float:
     return 30.0
 
 # -----------------------------
-# Dialog Handlers (for Edit/Delete)
+# Dialog Handler (for Delete)
 # -----------------------------
-def handle_dialogs():
-    """Shows the edit or delete dialogs based on session state."""
-    # Edit Dialog
-    if st.session_state.get("show_edit"):
-        worker_to_edit = next((w for w in st.session_state.workers if w['ID'] == st.session_state.action_id), None)
-        if worker_to_edit:
-            with st.dialog("Edit Worker"):
-                with st.form("edit_form"):
-                    st.write(f"Editing record for: **{worker_to_edit['Worker']}**")
-                    name = st.text_input("Worker Name", value=worker_to_edit['Worker'])
-                    total = st.number_input("Total Value", value=float(worker_to_edit.get('Total') or 0), format="%.2f")
-                    withdrawn = st.number_input("Withdrawn Value", value=float(worker_to_edit.get('Withdrawn') or 0), format="%.2f")
-                    note = st.text_input("Note", value=worker_to_edit.get('Note', ''))
-                    
-                    if st.form_submit_button("Save Changes", type="primary"):
-                        for i, worker in enumerate(st.session_state.workers):
-                            if worker['ID'] == st.session_state.action_id:
-                                worker['Worker'], worker['Total'], worker['Withdrawn'], worker['Note'] = name, total, withdrawn, note
-                                if worker['EntryType'] == 'Standard':
-                                    fee = compute_fee(total, None)
-                                    worker['Due'] = fee
-                                    worker['Remaining'] = (total / 2) - withdrawn - fee
-                                break
-                        st.session_state.show_edit = False
-                        st.rerun()
-        st.session_state.show_edit = False
-
-    # Delete Dialog
+def handle_delete_dialog():
+    """Shows the delete confirmation dialog based on session state."""
     if st.session_state.get("show_delete"):
         worker_to_delete = next((w for w in st.session_state.workers if w['ID'] == st.session_state.action_id), None)
         if worker_to_delete:
@@ -103,22 +77,21 @@ def main():
 
     # --- 2. Main Input Fields ---
     with st.form(key="add_worker_form", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-        with col1:
-            name = st.text_input("Worker Name")
-            withdrawn_val = st.number_input("Withdrawn Value", min_value=0.0, step=0.5, format="%.2f")
-        with col2:
-            total_value = st.number_input("Total Value", min_value=0.0, step=0.5, format="%.2f")
-            entry_type = st.radio("Entry Type", ("Standard", "CF"), horizontal=True)
+        # Reordered as requested
+        name = st.text_input("Worker Name")
+        total_value = st.number_input("Total Value", min_value=0.0, step=0.5, format="%.2f")
+        withdrawn_val = st.number_input("Withdrawn Value", min_value=0.0, step=0.5, format="%.2f")
+        
+        entry_type = st.radio("Entry Type", ("Standard", "CF"), horizontal=True)
         
         st.divider()
 
         # --- 3. Advanced Options ---
         with st.expander("Advanced Options"):
-            col3, col4 = st.columns(2)
-            with col3:
+            col1, col2 = st.columns(2)
+            with col1:
                 due_custom_val = st.number_input("Custom Due (Optional)", min_value=0.0, step=0.5, format="%.2f")
-            with col4:
+            with col2:
                 note_text = st.text_input("Note (Optional)")
         
         st.divider()
@@ -158,15 +131,13 @@ def main():
             df_display[col] = pd.to_numeric(df_display[col], errors='coerce').fillna(0).apply(clean_number)
         st.dataframe(df_display[["Worker", "Total", "Due", "Withdrawn", "Remaining", "Note"]], use_container_width=True, hide_index=True)
 
-        # --- 6. Actions ---
+        # --- 6. Actions (Delete Only) ---
         with st.expander("Actions"):
             worker_options = {f"{w['Worker']} (Total: {w['Total']}) - ID: {w['ID'][:4]}": w['ID'] for w in st.session_state.workers}
-            selected_label = st.selectbox("Select a worker to perform an action on", options=worker_options.keys(), index=None, placeholder="Choose a worker...")
+            selected_label = st.selectbox("Select a worker to delete", options=worker_options.keys(), index=None, placeholder="Choose a worker...")
             if selected_label:
                 st.session_state.action_id = worker_options[selected_label]
-                c1, c2 = st.columns(2)
-                c1.button("Edit Worker", on_click=lambda: st.session_state.update({"show_edit": True}), use_container_width=True)
-                c2.button("Delete Worker", on_click=lambda: st.session_state.update({"show_delete": True}), use_container_width=True, type="secondary")
+                st.button("Delete Worker", on_click=lambda: st.session_state.update({"show_delete": True}), use_container_width=True, type="secondary")
 
         # --- 7. Financial Summary ---
         st.subheader("Financial Summary")
@@ -205,7 +176,7 @@ def main():
             )
 
     # --- Handle Dialog Popups ---
-    handle_dialogs()
+    handle_delete_dialog()
 
 if __name__ == "__main__":
     main()
