@@ -22,12 +22,6 @@ def initialize_session_state():
         st.session_state.workers: list[dict] = []
     if "report_date" not in st.session_state:
         st.session_state.report_date = date.today()
-    
-    # State variables for managing the delete action robustly
-    if "worker_id_to_delete" not in st.session_state:
-        st.session_state.worker_id_to_delete = None
-    if "show_delete_dialog" not in st.session_state:
-        st.session_state.show_delete_dialog = False
 
 # -----------------------------
 # Helper Functions
@@ -55,28 +49,6 @@ def compute_fee(total_value: float, custom_due: float | None) -> float:
 # -----------------------------
 def main():
     initialize_session_state()
-
-    # --- DIALOG HANDLER: This runs at the top to show the dialog when needed ---
-    if st.session_state.show_delete_dialog and st.session_state.worker_id_to_delete:
-        worker_to_delete = next((w for w in st.session_state.workers if w['ID'] == st.session_state.worker_id_to_delete), None)
-        
-        if worker_to_delete:
-            with st.dialog("Confirm Deletion"):
-                st.warning(f"Are you sure you want to delete the record for **{worker_to_delete['Worker']}**?")
-                c1, c2 = st.columns(2)
-                
-                if c1.button("Yes, Delete", type="primary"):
-                    st.session_state.workers = [w for w in st.session_state.workers if w['ID'] != st.session_state.worker_id_to_delete]
-                    # Reset state and rerun
-                    st.session_state.worker_id_to_delete = None
-                    st.session_state.show_delete_dialog = False
-                    st.rerun()
-                
-                if c2.button("Cancel"):
-                    # Reset state and rerun
-                    st.session_state.worker_id_to_delete = None
-                    st.session_state.show_delete_dialog = False
-                    st.rerun()
 
     # --- 1. Date Input ---
     st.session_state.report_date = st.date_input("Date", value=st.session_state.report_date)
@@ -127,22 +99,7 @@ def main():
             df_display[col] = pd.to_numeric(df_display[col], errors='coerce').fillna(0).apply(clean_number)
         st.dataframe(df_display[["Worker", "Total", "Due", "Withdrawn", "Remaining", "Note"]], use_container_width=True, hide_index=True)
 
-        # --- 4. Actions (Stable & Separate) ---
-        with st.expander("Actions"):
-            # The user-facing label does not show the ID
-            worker_options_map = {f"{w['Worker']} (Total: {w['Total']})": w['ID'] for w in st.session_state.workers}
-            selected_label = st.selectbox("Select a worker to delete", options=worker_options_map.keys(), index=None, placeholder="Choose a worker...")
-            
-            delete_button_clicked = st.button("Delete Selected Worker", type="secondary", use_container_width=True, disabled=(not selected_label))
-
-            if delete_button_clicked and selected_label:
-                # This is the core of the stable solution:
-                # We just set the state and rerun. The dialog logic at the top will handle the rest.
-                st.session_state.worker_id_to_delete = worker_options_map[selected_label]
-                st.session_state.show_delete_dialog = True
-                st.rerun()
-
-        # --- 5. Financial Summary ---
+        # --- 4. Financial Summary ---
         st.subheader("Financial Summary")
         numeric_cols = ["Total", "Withdrawn", "Remaining"]
         for col in numeric_cols: df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
@@ -156,16 +113,36 @@ def main():
 
     st.divider()
 
-    # --- 6. Settings ---
+    # --- 5. Settings and Actions (Combined and Stable) ---
     with st.expander("⚙️ Settings"):
-        if st.button("Reset All Workers", use_container_width=True):
-            if st.session_state.workers:
-                st.session_state.workers = []
-                st.success("All workers have been cleared.")
+        st.subheader("Delete a Worker")
+        
+        # This mapping is internal and robust. The user only sees the descriptive label.
+        worker_options_map = {f"{w['Worker']} (Total: {w['Total']})": w['ID'] for w in st.session_state.workers}
+        selected_label = st.selectbox("Select a worker to delete", options=worker_options_map.keys(), index=None, placeholder="Choose a worker...")
+        
+        if st.button("Delete Selected Worker", type="secondary", use_container_width=True, disabled=(not selected_label)):
+            if selected_label:
+                worker_id_to_delete = worker_options_map[selected_label]
+                st.session_state.workers = [w for w in st.session_state.workers if w['ID'] != worker_id_to_delete]
+                st.success(f"Deleted worker: {selected_label.split(' (')[0]}")
                 st.rerun()
-        if st.session_state.workers:
-            df_csv = pd.DataFrame(st.session_state.workers)[["Worker", "Total", "Due", "Withdrawn", "Remaining", "Note"]]
-            st.download_button("Download Report as CSV", df_csv.to_csv(index=False).encode("utf-8"), f"cleanfoam_report_{st.session_state.report_date.strftime('%Y%m%d')}.csv", "text/csv", use_container_width=True)
+
+        st.divider()
+        st.subheader("General Settings")
+
+        col_settings_1, col_settings_2 = st.columns(2)
+        with col_settings_1:
+            if st.button("Reset All Workers", use_container_width=True):
+                if st.session_state.workers:
+                    st.session_state.workers = []
+                    st.success("All workers have been cleared.")
+                    st.rerun()
+        
+        with col_settings_2:
+            if st.session_state.workers:
+                df_csv = pd.DataFrame(st.session_state.workers)[["Worker", "Total", "Due", "Withdrawn", "Remaining", "Note"]]
+                st.download_button("Download Report as CSV", df_csv.to_csv(index=False).encode("utf-8"), f"cleanfoam_report_{st.session_state.report_date.strftime('%Y%m%d')}.csv", "text/csv", use_container_width=True)
 
 if __name__ == "__main__":
     main()
